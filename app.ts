@@ -5,6 +5,7 @@ import { getChargeState, getVehicle, getVehicleList, commandStopCharge, commandS
 import { getChargeSessionCollection, getChargeStateCollection } from './db';
 import { ObjectID } from 'mongodb';
 import { ITeslaChargeState } from './types';
+import { createServer } from 'http';
 
 const chargeLogic = async (vehicleId: string) => {
   console.log('Running charge logic...');
@@ -106,7 +107,16 @@ const dataCollection = async (vehicleId: string) => {
     setInterval(() => chargeLogic(vehicle.id_s), 1000 * 60 * 1); // execute start/stop charge logic every minute
     setInterval(() => dataCollection(vehicle.id_s), 1000 * 60 * 10); // execute data collection every 10 minutes
 
-    console.log('Charge my tesla is running!');
+
+    const server = createServer((req, res) => {
+      res.statusCode = 204;
+      res.end();
+    });
+
+    server.listen(process.env.PORT, () => {
+      console.log('Charge my tesla is running!');
+    });
+
   } catch (e) {
     console.error('App failed to start');
     console.error(e);
