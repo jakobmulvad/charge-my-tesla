@@ -1,14 +1,21 @@
-import { config } from 'dotenv';
-config({ path: '.env' });
+import { config } from "dotenv";
+config({ path: ".env" });
 
-import { getChargeState, getVehicle, getVehicleList, commandStopCharge, commandStartCharge } from './api';
-import { getChargeSessionCollection, getChargeStateCollection } from './db';
-import { ObjectID } from 'mongodb';
-import { ITeslaChargeState } from './types';
-import { createServer } from 'http';
+import {
+  getChargeState,
+  getVehicle,
+  getVehicleList,
+  commandStopCharge,
+  commandStartCharge,
+} from "./api";
+import { getChargeSessionCollection, getChargeStateCollection } from "./db";
+import { ObjectID } from "mongodb";
+import { ITeslaChargeState } from "./types";
+import { createServer } from "http";
+import { keepAlive } from "./keep-alive";
 
 const chargeLogic = async (vehicleId: string) => {
-  console.log('Running charge logic...');
+  console.log("Running charge logic...");
 
   const vehicle = await getVehicle(vehicleId);
 
@@ -17,22 +24,32 @@ const chargeLogic = async (vehicleId: string) => {
   const shouldCharge = hours > 0 && hours < 8;
 
   const chargeSessionCollection = await getChargeSessionCollection();
-  const openSession = await chargeSessionCollection.findOne({stop: {$exists: false}}, {sort: {start: -1}});
+  const openSession = await chargeSessionCollection.findOne(
+    { stop: { $exists: false } },
+    { sort: { start: -1 } }
+  );
 
   const closeChargeSession = async (chargeState: ITeslaChargeState) => {
     if (openSession) {
-      const hoursSinceLastUpdate = (now.getTime() - openSession.start.getTime()) / (1000 * 60 * 60);
+      const hoursSinceLastUpdate =
+        (now.getTime() - openSession.start.getTime()) / (1000 * 60 * 60);
       const powerConsumed = chargeState.charger_power * hoursSinceLastUpdate;
-      const minutesSinceStart = (now.getTime() - openSession.start.getTime()) / (1000 * 60);
-      console.log(`Charging complete! Total time: ${Math.round(minutesSinceStart)} mins`);
-      await chargeSessionCollection.updateOne({_id: new ObjectID((openSession as any)._id)}, {$set: {stop: now, lastUpdated: now}, $inc: { powerConsumed }});
+      const minutesSinceStart =
+        (now.getTime() - openSession.start.getTime()) / (1000 * 60);
+      console.log(
+        `Charging complete! Total time: ${Math.round(minutesSinceStart)} mins`
+      );
+      await chargeSessionCollection.updateOne(
+        { _id: new ObjectID((openSession as any)._id) },
+        { $set: { stop: now, lastUpdated: now }, $inc: { powerConsumed } }
+      );
     }
-  }
+  };
 
-  if (vehicle.state !== 'asleep') {
+  if (vehicle.state !== "asleep") {
     const chargeState = await getChargeState(vehicleId);
-    if (chargeState.charging_state === 'Charging' && !shouldCharge) {
-      console.log('Vehicle is charging outside timeslot - stopping');
+    if (chargeState.charging_state === "Charging" && !shouldCharge) {
+      console.log("Vehicle is charging outside timeslot - stopping");
       await commandStopCharge(vehicleId);
       await closeChargeSession(chargeState);
       return;
@@ -43,8 +60,10 @@ const chargeLogic = async (vehicleId: string) => {
     const chargeState = await getChargeState(vehicleId);
 
     switch (chargeState.charging_state) {
-      case 'Stopped': {
-        console.log('Vehicle is not charging in charging timeslot - start new session');
+      case "Stopped": {
+        console.log(
+          "Vehicle is not charging in charging timeslot - start new session"
+        );
         await commandStartCharge(vehicleId);
         await chargeSessionCollection.insertOne({
           start: now,
@@ -54,21 +73,28 @@ const chargeLogic = async (vehicleId: string) => {
         return;
       }
 
-      case 'Charging': {
+      case "Charging": {
         if (openSession) {
-          console.log('Vehicle is charging in charging timeslot - update session');
-          const hoursSinceLastUpdate = (now.getTime() - openSession.start.getTime()) / (1000 * 60 * 60);
-          const powerConsumed = chargeState.charger_power * hoursSinceLastUpdate;
-          await chargeSessionCollection.updateOne({_id: new ObjectID((openSession as any)._id)}, {$set: {lastUpdated: now}, $inc: { powerConsumed }});
+          console.log(
+            "Vehicle is charging in charging timeslot - update session"
+          );
+          const hoursSinceLastUpdate =
+            (now.getTime() - openSession.start.getTime()) / (1000 * 60 * 60);
+          const powerConsumed =
+            chargeState.charger_power * hoursSinceLastUpdate;
+          await chargeSessionCollection.updateOne(
+            { _id: new ObjectID((openSession as any)._id) },
+            { $set: { lastUpdated: now }, $inc: { powerConsumed } }
+          );
         } else {
-          console.log('Charging without an open session - SOMETHING IS WRONG');
+          console.log("Charging without an open session - SOMETHING IS WRONG");
         }
         return;
       }
 
-      case 'Complete': {
-        if (chargeState.charging_state === 'Complete') {
-          console.log('Vehicle is done charging in charging timeslot');
+      case "Complete": {
+        if (chargeState.charging_state === "Complete") {
+          console.log("Vehicle is done charging in charging timeslot");
           await closeChargeSession(chargeState);
         }
         return;
@@ -76,15 +102,15 @@ const chargeLogic = async (vehicleId: string) => {
     }
   }
 
-  console.log('Vehicle is outside timeslot - do nothing');
-}
+  console.log("Vehicle is outside timeslot - do nothing");
+};
 
 const dataCollection = async (vehicleId: string) => {
-  console.log('Running data collection...');
+  console.log("Running data collection...");
   const vehicle = await getVehicle(vehicleId);
 
-  if (vehicle.state === 'asleep') {
-    console.log('Vehicle is asleep - aborting');
+  if (vehicle.state === "asleep") {
+    console.log("Vehicle is asleep - aborting");
     return;
   }
 
@@ -106,7 +132,7 @@ const dataCollection = async (vehicleId: string) => {
 
     setInterval(() => chargeLogic(vehicle.id_s), 1000 * 60 * 1); // execute start/stop charge logic every minute
     setInterval(() => dataCollection(vehicle.id_s), 1000 * 60 * 10); // execute data collection every 10 minutes
-
+    setInterval(() => keepAlive(), 1000 * 60 * 20); // Keep alive ping every 20 minutes
 
     const server = createServer((req, res) => {
       res.statusCode = 204;
@@ -114,14 +140,13 @@ const dataCollection = async (vehicleId: string) => {
     });
 
     server.listen(process.env.PORT, () => {
-      console.log('Charge my tesla is running!');
+      console.log("Charge my tesla is running!");
     });
-
   } catch (e) {
-    console.error('App failed to start');
+    console.error("App failed to start");
     console.error(e);
   }
-})()
+})();
 
 /*
 
