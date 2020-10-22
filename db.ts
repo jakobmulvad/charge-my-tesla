@@ -4,20 +4,20 @@ import { IChargingSessionDocument, ITeslaApiToken, ITeslaChargeState } from './t
 const connectPromise = MongoClient.connect(process.env.MONGO_URL as string, { useNewUrlParser: true, useUnifiedTopology: true });
 const getDb = async () => {
   const client = await connectPromise;
-  return client.db("charge-my-tesla");
-}
+  return client.db('charge-my-tesla');
+};
 
 export const getTokenCollection = async () => {
   const db = await getDb();
   return db.collection<ITeslaApiToken>('token');
-}
+};
 
 export const getChargeStateCollection = async () => {
   const db = await getDb();
   return db.collection<ITeslaChargeState>('charge-state');
-}
+};
 
 export const getChargeSessionCollection = async () => {
   const db = await getDb();
   return db.collection<IChargingSessionDocument>('charge-session');
-}
+};

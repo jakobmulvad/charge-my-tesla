@@ -1,21 +1,23 @@
-import { config } from "dotenv";
-config({ path: ".env" });
+/* eslint-disable import/first */
+import { config } from 'dotenv';
 
+config({ path: '.env' });
+
+import { ObjectID } from 'mongodb';
+import { createServer } from 'http';
 import {
   getChargeState,
   getVehicle,
   getVehicleList,
   commandStopCharge,
   commandStartCharge,
-} from "./api";
-import { getChargeSessionCollection, getChargeStateCollection } from "./db";
-import { ObjectID } from "mongodb";
-import { ITeslaChargeState } from "./types";
-import { createServer } from "http";
-import { keepAlive } from "./keep-alive";
+} from './api';
+import { getChargeSessionCollection, getChargeStateCollection } from './db';
+import { ITeslaChargeState } from './types';
+import { keepAlive } from './keep-alive';
 
 const chargeLogic = async (vehicleId: string) => {
-  console.log("Running charge logic...");
+  console.log('Running charge logic...');
 
   const vehicle = await getVehicle(vehicleId);
 
@@ -26,91 +28,94 @@ const chargeLogic = async (vehicleId: string) => {
   const chargeSessionCollection = await getChargeSessionCollection();
   const openSession = await chargeSessionCollection.findOne(
     { stop: { $exists: false } },
-    { sort: { start: -1 } }
+    { sort: { start: -1 } },
   );
 
   const closeChargeSession = async (chargeState: ITeslaChargeState) => {
     if (openSession) {
-      const hoursSinceLastUpdate =
-        (now.getTime() - openSession.start.getTime()) / (1000 * 60 * 60);
+      const hoursSinceLastUpdate = (now.getTime() - openSession.start.getTime()) / (1000 * 60 * 60);
       const powerConsumed = chargeState.charger_power * hoursSinceLastUpdate;
-      const minutesSinceStart =
-        (now.getTime() - openSession.start.getTime()) / (1000 * 60);
+      const minutesSinceStart = (now.getTime() - openSession.start.getTime()) / (1000 * 60);
       console.log(
-        `Charging complete! Total time: ${Math.round(minutesSinceStart)} mins`
+        `Charging complete! Total time: ${Math.round(minutesSinceStart)} mins`,
       );
       await chargeSessionCollection.updateOne(
+        // eslint-disable-next-line no-underscore-dangle
         { _id: new ObjectID((openSession as any)._id) },
-        { $set: { stop: now, lastUpdated: now }, $inc: { powerConsumed } }
+        { $set: { stop: now, lastUpdated: now }, $inc: { powerConsumed } },
       );
     }
   };
 
-  if (vehicle.state !== "asleep") {
+  if (vehicle.state !== 'asleep') {
     const chargeState = await getChargeState(vehicleId);
-    if (chargeState.charging_state === "Charging" && !shouldCharge) {
-      console.log("Vehicle is charging outside timeslot - stopping");
+    if (chargeState.charging_state === 'Charging' && !shouldCharge) {
+      console.log('Vehicle is charging outside timeslot - stopping');
       await commandStopCharge(vehicleId);
       await closeChargeSession(chargeState);
       return;
     }
   }
 
-  if (shouldCharge) {
-    const chargeState = await getChargeState(vehicleId);
-
-    switch (chargeState.charging_state) {
-      case "Stopped": {
-        console.log(
-          "Vehicle is not charging in charging timeslot - start new session"
-        );
-        await commandStartCharge(vehicleId);
-        await chargeSessionCollection.insertOne({
-          start: now,
-          lastUpdated: now,
-          powerConsumed: 0,
-        });
-        return;
-      }
-
-      case "Charging": {
-        if (openSession) {
-          console.log(
-            "Vehicle is charging in charging timeslot - update session"
-          );
-          const hoursSinceLastUpdate =
-            (now.getTime() - openSession.start.getTime()) / (1000 * 60 * 60);
-          const powerConsumed =
-            chargeState.charger_power * hoursSinceLastUpdate;
-          await chargeSessionCollection.updateOne(
-            { _id: new ObjectID((openSession as any)._id) },
-            { $set: { lastUpdated: now }, $inc: { powerConsumed } }
-          );
-        } else {
-          console.log("Charging without an open session - SOMETHING IS WRONG");
-        }
-        return;
-      }
-
-      case "Complete": {
-        if (chargeState.charging_state === "Complete") {
-          console.log("Vehicle is done charging in charging timeslot");
-          await closeChargeSession(chargeState);
-        }
-        return;
-      }
-    }
+  if (!shouldCharge) {
+    console.log('Vehicle is outside timeslot - do nothing');
+    return;
   }
 
-  console.log("Vehicle is outside timeslot - do nothing");
+  const chargeState = await getChargeState(vehicleId);
+
+  switch (chargeState.charging_state) {
+    case 'Stopped': {
+      console.log(
+        'Vehicle is not charging in charging timeslot - start new session',
+      );
+      await commandStartCharge(vehicleId);
+      await chargeSessionCollection.insertOne({
+        start: now,
+        lastUpdated: now,
+        powerConsumed: 0,
+      });
+      break;
+    }
+
+    case 'Charging': {
+      if (openSession) {
+        console.log(
+          'Vehicle is charging in charging timeslot - update session',
+        );
+        const hoursSinceLastUpdate = (now.getTime() - openSession.start.getTime()) / (1000 * 60 * 60);
+        const powerConsumed = chargeState.charger_power * hoursSinceLastUpdate;
+        await chargeSessionCollection.updateOne(
+          // eslint-disable-next-line no-underscore-dangle
+          { _id: new ObjectID((openSession as any)._id) },
+          { $set: { lastUpdated: now }, $inc: { powerConsumed } },
+        );
+      } else {
+        console.log('Charging without an open session - SOMETHING IS WRONG');
+      }
+      break;
+    }
+
+    case 'Complete': {
+      if (chargeState.charging_state === 'Complete') {
+        console.log('Vehicle is done charging in charging timeslot');
+        await closeChargeSession(chargeState);
+      }
+      break;
+    }
+
+    default: {
+      // Ignore...
+    }
+  }
 };
 
 const dataCollection = async (vehicleId: string) => {
-  console.log("Running data collection...");
+  console.log('Running data collection...');
   const vehicle = await getVehicle(vehicleId);
 
-  if (vehicle.state === "asleep") {
-    console.log("Vehicle is asleep - aborting");
+  if (vehicle.state === 'asleep') {
+    console.log('Vehicle is asleep - aborting');
     return;
   }
 
@@ -127,7 +132,7 @@ const dataCollection = async (vehicleId: string) => {
       return;
     }
 
-    let vehicle = vehicleList[0];
+    const vehicle = vehicleList[0];
     console.log(`Found vehicle: ${vehicle.display_name}`);
 
     setInterval(() => chargeLogic(vehicle.id_s), 1000 * 60 * 1); // execute start/stop charge logic every minute
@@ -140,10 +145,10 @@ const dataCollection = async (vehicleId: string) => {
     });
 
     server.listen(process.env.PORT, () => {
-      console.log("Charge my tesla is running!");
+      console.log('Charge my tesla is running!');
     });
   } catch (e) {
-    console.error("App failed to start");
+    console.error('App failed to start');
     console.error(e);
   }
 })();

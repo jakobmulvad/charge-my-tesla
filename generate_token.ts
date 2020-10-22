@@ -1,3 +1,4 @@
+/* eslint-disable camelcase */
 import Axios from 'axios';
 import { ITeslaApiToken } from './types';
 import { getTokenCollection } from './db';
@@ -30,9 +31,9 @@ export const getToken = async () : Promise<ITeslaApiToken> => {
   return tokenResponse.data;
 };
 
-export const refreshToken = async (refreshToken: string) : Promise<ITeslaApiToken> => {
+export const refreshToken = async (token: string) : Promise<ITeslaApiToken> => {
   const tokenResponse = await Axios.post<ITeslaApiToken>(authUrl, {
-    refresh_token: refreshToken,
+    refresh_token: token,
     client_secret,
     client_id,
     grant_type: 'refresh_token',
@@ -45,4 +46,4 @@ export const refreshToken = async (refreshToken: string) : Promise<ITeslaApiToke
   console.log('refreshToken: Storing refreshed token');
 
   return tokenResponse.data;
-}
+};

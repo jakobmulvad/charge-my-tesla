@@ -1,3 +1,4 @@
+/* eslint-disable camelcase */
 export interface ITeslaApiToken {
   access_token: string;
   token_type: string;
@@ -10,13 +11,13 @@ export type TeslaVehicleState = 'asleep' | 'online';
 
 export type TeslaChargePortLatchState = 'Engaged';
 
-export type TeslaChargingState = 'Stopped' | 'Disconnected' | "Complete" | "Charging";
+export type TeslaChargingState = 'Stopped' | 'Disconnected' | 'Complete' | 'Charging';
 
 export interface ITeslaApiResponse<T> {
   response: T;
 }
 
-export interface ITeslaVehicle  {
+export interface ITeslaVehicle {
   id: number;
   vehicle_id: number;
   vin: string;
