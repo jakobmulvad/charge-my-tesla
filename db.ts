@@ -21,3 +21,9 @@ export const getChargeSessionCollection = async () => {
   const db = await getDb();
   return db.collection<IChargingSessionDocument>('charge-session');
 };
+
+export const getLastKnownChargeState = async () => {
+  const collection = await getChargeStateCollection();
+  const chargeState = collection.findOne({}, { sort: { timestamp: -1 } });
+  return chargeState;
+};

@@ -33,7 +33,6 @@ export const wakeVehicle = async (vehicleId: string) => {
   let vehicle = await getVehicle(vehicleId);
 
   if (vehicle.state !== 'asleep') {
-    console.log('Vehicle already awake');
     return;
   }
 
@@ -49,7 +48,10 @@ export const wakeVehicle = async (vehicleId: string) => {
   console.log('Vehicle is awake');
 };
 
-export const getChargeState = async (vehicleId: string): Promise<ITeslaChargeState> => api<ITeslaChargeState>('get', `/${vehicleId}/data_request/charge_state`);
+export const getChargeState = async (vehicleId: string): Promise<ITeslaChargeState> => {
+  await wakeVehicle(vehicleId);
+  return api<ITeslaChargeState>('get', `/${vehicleId}/data_request/charge_state`);
+};
 
 export const getVehicleData = async (vehicleId: string): Promise<ITeslaVehicleData> => api<ITeslaVehicleData>('get', `/${vehicleId}/vehicle_data`);
 
