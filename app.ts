@@ -106,68 +106,6 @@ const chargeLogic = async (vehicleId: string) => {
     { _id: new ObjectID((openSession as any)._id) },
     { $set: { lastUpdated: now }, $inc: { powerConsumed } },
   );
-
-  // Get latest known charge state or fetch it if none has ever been known
-  /* let chargeState = await getLastKnownChargeState();
-  if (!chargeState) {
-    chargeState = await getAndStoreChargeState(vehicleId);
-  }
-
-  if (chargeState.charging_state === 'Charging' && !shouldCharge) {
-    console.log('Vehicle is charging outside timeslot - stopping');
-    await commandStopCharge(vehicleId);
-    await closeChargeSession(chargeState);
-    return;
-  }
-
-  if (!shouldCharge) {
-    console.log('Vehicle is outside timeslot - do nothing');
-    return;
-  }
-
-  switch (chargeState.charging_state) {
-    case 'Stopped': {
-      console.log(
-        'Vehicle is not charging in charging timeslot - start new session',
-      );
-      await commandStartCharge(vehicleId);
-      await chargeSessionCollection.insertOne({
-        start: now,
-        lastUpdated: now,
-        powerConsumed: 0,
-      });
-      break;
-    }
-
-    case 'Charging': {
-      if (openSession) {
-        console.log(
-          'Vehicle is charging in charging timeslot - update session',
-        );
-        const hoursSinceLastUpdate = (now.getTime() - openSession.start.getTime()) / (1000 * 60 * 60);
-        const powerConsumed = chargeState.charger_power * hoursSinceLastUpdate;
-        await chargeSessionCollection.updateOne(
-          // eslint-disable-next-line no-underscore-dangle
-          { _id: new ObjectID((openSession as any)._id) },
-          { $set: { lastUpdated: now }, $inc: { powerConsumed } },
-        );
-      } else {
-        console.log('Charging without an open session - SOMETHING IS WRONG');
-      }
-      break;
-    }
-
-    case 'Complete': {
-      console.log('Vehicle is done charging in charging timeslot');
-      await closeChargeSession(chargeState);
-      break;
-    }
-
-    default: {
-      console.log(`Vehicle is in an unknown charging state: ${chargeState.charging_state}`);
-      // Ignore...
-    }
-  } */
 };
 
 const dataCollection = async (vehicleId: string) => {
