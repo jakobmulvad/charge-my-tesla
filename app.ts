@@ -23,7 +23,10 @@ const getAndStoreChargeState = async (vehicleId: string) => {
   return chargeState;
 };
 
-const hoursBetween = (dateA: Date, dateB: Date) => Math.abs(dateA.getTime() - dateB.getTime()) / (1000 * 60 * 60);
+const MILLIS_IN_HOUR = (1000 * 60 * 60);
+
+const hoursBetween = (dateA: Date, dateB: Date) => Math.abs(dateA.getTime() - dateB.getTime()) / MILLIS_IN_HOUR;
+const hoursSince = (timestamp: number) => (new Date().getTime() - timestamp) / MILLIS_IN_HOUR;
 
 const shouldChargeAt = (date: Date) => {
   const hours = date.getUTCHours();
@@ -42,6 +45,7 @@ const chargeLogic = async (vehicleId: string) => {
   // const minutes = now.getMinutes();
   // const shouldCharge = minutes > 5 && minutes < 15;
 
+  const lastKnownChargeState = await getLastKnownChargeState();
   const chargeSessionCollection = await getChargeSessionCollection();
   const openSession = await chargeSessionCollection.findOne(
     { stop: { $exists: false } },
@@ -64,7 +68,7 @@ const chargeLogic = async (vehicleId: string) => {
     }
   };
 
-  // OUTSIDE SESSION
+  // OUTSIDE SLOT
   if (!shouldCharge) {
     if (openSession) {
       console.log('Vehicle in charging session outside timeslot - close session');
@@ -72,13 +76,24 @@ const chargeLogic = async (vehicleId: string) => {
       const chargeState = await getAndStoreChargeState(vehicleId);
       await commandStopCharge(vehicleId);
       await closeChargeSession(chargeState);
+      return;
     }
-    return;
+
+    // Stale charge state?
+    if (vehicle.state === 'online' && (!lastKnownChargeState || hoursSince(lastKnownChargeState?.timestamp) > 3)) {
+      console.log('Outside charging slot and last known charge state is stale - wait for data gathering');
+      return;
+    }
+
+    if (lastKnownChargeState?.charging_state === 'Charging') {
+      console.log('Outside charging slot and last known charge state is "Charging" - stop charging');
+      await commandStopCharge(vehicleId);
+      return;
+    }
   }
 
-  // INSIDE SESSION
+  // INSIDE SLOT
   if (!openSession) {
-    const lastKnownChargeState = await getLastKnownChargeState();
     if (lastKnownChargeState?.charging_state === 'Complete') {
       // done!
       return;
