@@ -88,6 +88,7 @@ const chargeLogic = async (vehicleId: string) => {
     if (lastKnownChargeState?.charging_state === 'Charging') {
       console.log('Outside charging slot and last known charge state is "Charging" - stop charging');
       await commandStopCharge(vehicleId);
+      await getAndStoreChargeState(vehicleId);
       return;
     }
     return;
