@@ -90,6 +90,7 @@ const chargeLogic = async (vehicleId: string) => {
       await commandStopCharge(vehicleId);
       return;
     }
+    return;
   }
 
   // INSIDE SLOT
