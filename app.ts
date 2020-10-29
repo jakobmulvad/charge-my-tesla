@@ -1,12 +1,11 @@
 /* eslint-disable import/first */
 import { config } from 'dotenv';
 
-config({ path: '.env' });
+config();
 
 import { ObjectID } from 'mongodb';
 import { createServer } from 'http';
 import Axios from 'axios';
-import { open } from 'fs';
 import {
   getChargeState,
   getVehicle,
@@ -18,13 +17,19 @@ import { getChargeSessionCollection, getChargeStateCollection, getLastKnownCharg
 import { ITeslaChargeState } from './types';
 
 const getAndStoreChargeState = async (vehicleId: string) => {
-  const chargeState = await getChargeState(vehicleId);
+  const chargeState = await getChargeState(vehicleId, true);
   const chargeStateCollection = await getChargeStateCollection();
   await chargeStateCollection.insertOne(chargeState);
   return chargeState;
 };
 
 const hoursBetween = (dateA: Date, dateB: Date) => Math.abs(dateA.getTime() - dateB.getTime()) / (1000 * 60 * 60);
+
+const shouldChargeAt = (date: Date) => {
+  const hours = date.getUTCHours();
+  const result = hours > 1 && hours < 7;
+  return result;
+};
 
 const chargeLogic = async (vehicleId: string) => {
   console.log(`${new Date().toJSON().slice(0, 19)} Running charge logic...`);
@@ -33,8 +38,7 @@ const chargeLogic = async (vehicleId: string) => {
   console.log(`Vehicle state: ${vehicle.state}`);
 
   const now = new Date();
-  const hours = now.getHours();
-  const shouldCharge = hours > 1 && hours < 8;
+  const shouldCharge = shouldChargeAt(now);
   // const minutes = now.getMinutes();
   // const shouldCharge = minutes > 5 && minutes < 15;
 

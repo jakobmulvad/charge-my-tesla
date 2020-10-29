@@ -48,8 +48,10 @@ export const wakeVehicle = async (vehicleId: string) => {
   console.log('Vehicle is awake');
 };
 
-export const getChargeState = async (vehicleId: string): Promise<ITeslaChargeState> => {
-  await wakeVehicle(vehicleId);
+export const getChargeState = async (vehicleId: string, wakeVehicleBefore?: boolean): Promise<ITeslaChargeState> => {
+  if (wakeVehicleBefore) {
+    await wakeVehicle(vehicleId);
+  }
   return api<ITeslaChargeState>('get', `/${vehicleId}/data_request/charge_state`);
 };
 
