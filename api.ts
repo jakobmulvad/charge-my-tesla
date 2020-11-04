@@ -1,74 +1,73 @@
 /* eslint-disable no-await-in-loop */
 import Axios, { Method } from 'axios';
+import { WithId } from 'mongodb';
 import {
-  ITeslaApiResponse, ITeslaVehicle, ITeslaChargeState, ITeslaVehicleData, ITeslaApiToken,
+  ITeslaApiResponse, ITeslaVehicle, ITeslaChargeState, ITeslaVehicleData, IAccountDocument, ITeslaVehicleState,
 } from './types';
-import { getToken, refreshToken } from './generate_token';
+import { refreshToken } from './generate_token';
+import { getAccountCollection } from './db';
 
 const sleep = (timeout: number) => new Promise((res) => setTimeout(res, timeout));
 
-let cachedToken: ITeslaApiToken | undefined;
+export const getApi = async (account: WithId<IAccountDocument>) => {
+  const { vehicleId } = account;
+  let { token } = account;
 
-const api = async <T>(method:Method, url: string) : Promise<T> => {
-  if (!cachedToken) {
-    cachedToken = await getToken();
-  }
-
-  const expiresAt = (cachedToken.created_at + cachedToken.expires_in - 60) * 1000;
+  // Time to refresh?
+  const expiresAt = (token.created_at + token.expires_in - 60) * 1000;
   if (Date.now() > expiresAt) {
-    cachedToken = await refreshToken(cachedToken.refresh_token);
+    token = await refreshToken(token.refresh_token);
+    const accountsColl = await getAccountCollection();
+    accountsColl.updateOne({ _id: account._id }, { $set: { token } });
   }
 
-  const response = await Axios.request<ITeslaApiResponse<T>>({
-    url, method, baseURL: 'https://owner-api.teslamotors.com/api/1/vehicles', headers: { Authorization: `Bearer ${cachedToken.access_token}` },
+  const axios = Axios.create({
+    baseURL: 'https://owner-api.teslamotors.com/api/1/vehicles',
+    headers: { Authorization: `Bearer ${token.access_token}` },
   });
-  return response.data.response;
-};
 
-export const getVehicleList = async (): Promise<ITeslaVehicle[]> => api<ITeslaVehicle[]>('get', '/');
+  const api = {
+    getVehicle: async () => (await axios.get<ITeslaVehicle>(`/${vehicleId}`)).data,
 
-export const getVehicle = async (vehicleId: string): Promise<ITeslaVehicle> => api<ITeslaVehicle>('get', `/${vehicleId}`);
+    getChargeState: async () => (await axios.get<ITeslaChargeState>(`/${vehicleId}/data_request/charge_state`)).data,
 
-export const wakeVehicle = async (vehicleId: string) => {
-  let vehicle = await getVehicle(vehicleId);
+    getVehicleData: async () => (await axios.get<ITeslaVehicleData>(`/${vehicleId}/vehicle_data`)).data,
 
-  if (vehicle.state !== 'asleep') {
-    return;
-  }
+    wakeVehicle: async () => {
+      let vehicle = await api.getVehicle();
 
-  console.log('Vehicle is asleep - waking up...');
-  await api('post', `/${vehicleId}/wake_up`);
+      if (vehicle.state !== 'asleep') {
+        return;
+      }
 
-  while (vehicle.state === 'asleep') {
-    await sleep(1000);
-    vehicle = await getVehicle(vehicleId);
-    console.log(`  ${vehicle.state}`);
-  }
+      console.log('Vehicle is asleep - waking up...');
+      await axios(`/${vehicleId}/wake_up`);
 
-  console.log('Vehicle is awake');
-};
+      let tries = 0;
+      while (vehicle.state === 'asleep') {
+        if (tries++ > 20) {
+          throw new Error('Vehicle never woke up');
+        }
+        await sleep(1000);
+        vehicle = await api.getVehicle();
+      }
 
-export const getChargeState = async (vehicleId: string, wakeVehicleBefore?: boolean): Promise<ITeslaChargeState> => {
-  if (wakeVehicleBefore) {
-    await wakeVehicle(vehicleId);
-  }
-  return api<ITeslaChargeState>('get', `/${vehicleId}/data_request/charge_state`);
-};
+      console.log('Vehicle is awake');
+    },
 
-export const getVehicleData = async (vehicleId: string): Promise<ITeslaVehicleData> => api<ITeslaVehicleData>('get', `/${vehicleId}/vehicle_data`);
+    commandStartCharge: async (): Promise<void> => {
+      await api.wakeVehicle();
+      const chargeState = await api.getChargeState();
 
-export const commandStartCharge = async (vehicleId: string): Promise<void> => {
-  await wakeVehicle(vehicleId);
-  const chargeState = await getChargeState(vehicleId);
+      if (chargeState.charging_state !== 'Stopped') {
+        console.log(`Cannot charge vehicle because it is in incorrect charging state: ${chargeState.charging_state}`);
+        return;
+      }
 
-  if (chargeState.charging_state !== 'Stopped') {
-    console.log(`Cannot charge vehicle because it is in incorrect charging state: ${chargeState.charging_state}`);
-    return;
-  }
+      await axios.post(`/${vehicleId}/command/charge_start`);
+    },
 
-  await api('post', `/${vehicleId}/command/charge_start`);
-};
-
-export const commandStopCharge = async (vehicleId: string): Promise<void> => {
-  await api('post', `/${vehicleId}/command/charge_stop`);
+    commandStopCharge: async (): Promise<void> => axios.post(`/${vehicleId}/command/charge_stop`),
+  };
+  return api;
 };

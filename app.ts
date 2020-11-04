@@ -3,25 +3,14 @@ import { config } from 'dotenv';
 
 config();
 
-import { ObjectID } from 'mongodb';
+import { ObjectID, WithId } from 'mongodb';
 import { createServer } from 'http';
 import Axios from 'axios';
+import { getApi } from './api';
 import {
-  getChargeState,
-  getVehicle,
-  getVehicleList,
-  commandStopCharge,
-  commandStartCharge,
-} from './api';
-import { getChargeSessionCollection, getChargeStateCollection, getLastKnownChargeState } from './db';
-import { ITeslaChargeState } from './types';
-
-const getAndStoreChargeState = async (vehicleId: string) => {
-  const chargeState = await getChargeState(vehicleId, true);
-  const chargeStateCollection = await getChargeStateCollection();
-  await chargeStateCollection.insertOne(chargeState);
-  return chargeState;
-};
+  getAccountCollection, getChargeSessionCollection, getChargeStateCollection, getLastKnownChargeState,
+} from './db';
+import { IAccountDocument, ITeslaChargeState } from './types';
 
 const MILLIS_IN_HOUR = (1000 * 60 * 60);
 
@@ -34,18 +23,26 @@ const shouldChargeAt = (date: Date) => {
   return result;
 };
 
-const chargeLogic = async (vehicleId: string) => {
-  console.log(`${new Date().toJSON().slice(0, 19)} Running charge logic...`);
+const chargeLogicVehicle = async (account: WithId<IAccountDocument>) => {
+  const { vehicleId } = account;
+  const api = await getApi(account);
 
-  const vehicle = await getVehicle(vehicleId);
-  console.log(`Vehicle state: ${vehicle.state}`);
+  const vehicle = await api.getVehicle();
 
   const now = new Date();
   const shouldCharge = shouldChargeAt(now);
   // const minutes = now.getMinutes();
   // const shouldCharge = minutes > 5 && minutes < 15;
 
-  const lastKnownChargeState = await getLastKnownChargeState();
+  const getAndStoreChargeState = async () => {
+    await api.wakeVehicle();
+    const chargeState = await api.getChargeState();
+    const chargeStateCollection = await getChargeStateCollection();
+    await chargeStateCollection.insertOne({ vehicleId, ...chargeState });
+    return chargeState;
+  };
+
+  const lastKnownChargeState = await getLastKnownChargeState(vehicleId);
   const chargeSessionCollection = await getChargeSessionCollection();
   const openSession = await chargeSessionCollection.findOne(
     { stop: { $exists: false } },
@@ -62,7 +59,7 @@ const chargeLogic = async (vehicleId: string) => {
       );
       await chargeSessionCollection.updateOne(
         // eslint-disable-next-line no-underscore-dangle
-        { _id: new ObjectID((openSession as any)._id) },
+        { _id: openSession._id },
         { $set: { stop: now, lastUpdated: now }, $inc: { powerConsumed } },
       );
     }
@@ -73,8 +70,8 @@ const chargeLogic = async (vehicleId: string) => {
     if (openSession) {
       console.log('Vehicle in charging session outside timeslot - close session');
 
-      const chargeState = await getAndStoreChargeState(vehicleId);
-      await commandStopCharge(vehicleId);
+      const chargeState = await getAndStoreChargeState();
+      await api.commandStopCharge();
       await closeChargeSession(chargeState);
       return;
     }
@@ -87,8 +84,8 @@ const chargeLogic = async (vehicleId: string) => {
 
     if (lastKnownChargeState?.charging_state === 'Charging') {
       console.log('Outside charging slot and last known charge state is "Charging" - stop charging');
-      await commandStopCharge(vehicleId);
-      await getAndStoreChargeState(vehicleId);
+      await api.commandStopCharge();
+      await getAndStoreChargeState();
       return;
     }
     return;
@@ -102,7 +99,7 @@ const chargeLogic = async (vehicleId: string) => {
     }
 
     console.log('Vehicle not in charging session inside timeslot - start new session');
-    await commandStartCharge(vehicleId);
+    await api.commandStartCharge();
     await chargeSessionCollection.insertOne({
       start: now,
       lastUpdated: now,
@@ -112,7 +109,7 @@ const chargeLogic = async (vehicleId: string) => {
   }
 
   // We have an active charge session and are inside charging timeslot - update session
-  const chargeState = await getAndStoreChargeState(vehicleId);
+  const chargeState = await getAndStoreChargeState();
 
   if (chargeState.charging_state === 'Complete') {
     console.log('Charging complete! - closing session');
@@ -129,7 +126,18 @@ const chargeLogic = async (vehicleId: string) => {
   );
 };
 
-const dataCollection = async (vehicleId: string) => {
+const chargeLogic = async () => {
+  console.log(`${new Date().toJSON().slice(0, 19)} Running charge logic...`);
+  const accountsColl = await getAccountCollection();
+  const accounts = await accountsColl.find({}).toArray();
+  // eslint-disable-next-line no-restricted-syntax
+  for (const account of accounts) {
+    // eslint-disable-next-line no-await-in-loop
+    await chargeLogicVehicle(account);
+  }
+};
+
+/* const dataCollection = async (vehicleId: string) => {
   console.log('Running data collection...');
   const vehicle = await getVehicle(vehicleId);
 
@@ -141,21 +149,12 @@ const dataCollection = async (vehicleId: string) => {
   const chargeState = await getChargeState(vehicleId);
   const chargeStateCollection = await getChargeStateCollection();
   await chargeStateCollection.insertOne(chargeState);
-};
+}; */
 
 (async () => {
   try {
-    const vehicleList = await getVehicleList();
-
-    if (vehicleList.length < 0) {
-      return;
-    }
-
-    const vehicle = vehicleList[0];
-    console.log(`Found vehicle: ${vehicle.display_name}`);
-
-    setInterval(() => chargeLogic(vehicle.id_s), 1000 * 60 * 1); // execute start/stop charge logic every minute
-    setInterval(() => dataCollection(vehicle.id_s), 1000 * 60 * 15); // execute data collection
+    setInterval(() => chargeLogic(), 1000 * 60 * 1); // execute start/stop charge logic every minute
+    // setInterval(() => dataCollection(vehicle.id_s), 1000 * 60 * 15); // execute data collection
 
     const { SELF_URL } = process.env;
     if (SELF_URL) {

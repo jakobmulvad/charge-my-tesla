@@ -240,3 +240,16 @@ export interface IChargingSessionDocument {
   powerConsumed: number;
   stop?: Date;
 }
+
+export interface IAccountDocument {
+  chargingHoursStartUTC: number;
+  chargingHoursEndUTC: number;
+  token: ITeslaApiToken;
+  homeLatitude: number,
+  homeLongitude: number,
+  vehicleId: string,
+}
+
+export interface IChargeStateDocument extends ITeslaChargeState {
+  vehicleId: string,
+}
