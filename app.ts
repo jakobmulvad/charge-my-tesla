@@ -17,10 +17,11 @@ const MILLIS_IN_HOUR = (1000 * 60 * 60);
 const hoursBetween = (dateA: Date, dateB: Date) => Math.abs(dateA.getTime() - dateB.getTime()) / MILLIS_IN_HOUR;
 const hoursSince = (timestamp: number) => (new Date().getTime() - timestamp) / MILLIS_IN_HOUR;
 
-const shouldChargeAt = (date: Date) => {
-  const hours = date.getUTCHours();
-  const result = hours > 1 && hours < 7;
-  return result;
+const shouldChargeAt = (hourUTC:number, startHourUTC: number, endHourUTC: number) => {
+  if (startHourUTC > endHourUTC) {
+    return hourUTC > startHourUTC || hourUTC < endHourUTC;
+  }
+  return hourUTC > startHourUTC && hourUTC < endHourUTC;
 };
 
 const chargeLogicVehicle = async (account: WithId<IAccountDocument>) => {
@@ -30,9 +31,7 @@ const chargeLogicVehicle = async (account: WithId<IAccountDocument>) => {
   const vehicle = await api.getVehicle();
 
   const now = new Date();
-  const shouldCharge = shouldChargeAt(now);
-  // const minutes = now.getMinutes();
-  // const shouldCharge = minutes > 5 && minutes < 15;
+  const shouldCharge = shouldChargeAt(now.getUTCHours(), account.chargingHoursStartUTC, account.chargingHoursEndUTC);
 
   const getAndStoreChargeState = async () => {
     await api.wakeVehicle();
